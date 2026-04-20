@@ -7,7 +7,9 @@ import 'screens/alerts_screen.dart';
 import 'screens/graphs_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/insights_screen.dart';
+import 'screens/camera_feed_screen.dart';
 import 'providers/driver_score_provider.dart';
+import 'providers/camera_stream_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,6 +35,7 @@ class SmartVehicleEmissionMonitorApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => DriverScoreProvider()),
+        ChangeNotifierProvider(create: (_) => CameraStreamProvider()),
       ],
       child: MaterialApp(
         title: 'EcoDrive',
@@ -46,10 +49,10 @@ class SmartVehicleEmissionMonitorApp extends StatelessWidget {
           ),
           useMaterial3: true,
           textTheme: GoogleFonts.poppinsTextTheme(),
-          cardTheme: CardTheme(
+          cardTheme: const CardThemeData(
             elevation: 2,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.all(Radius.circular(16)),
             ),
           ),
           appBarTheme: AppBarTheme(
@@ -82,6 +85,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   final List<Widget> _screens = [
     const DashboardScreen(),
+    const CameraFeedScreen(),
     const AlertsScreen(),
     const GraphsScreen(),
     InsightsScreen(),
@@ -124,6 +128,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             BottomNavigationBarItem(
               icon: Icon(Icons.dashboard),
               label: 'Dashboard',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.videocam),
+              label: 'Camera',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.notifications),

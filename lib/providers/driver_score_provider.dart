@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../models/history_point.dart';
 import '../models/emission_alert.dart';
+import '../services/mqtt_service.dart';
 import '../services/notification_service.dart';
 import '../services/settings_service.dart';
 
@@ -22,6 +23,9 @@ class DriverScoreProvider with ChangeNotifier {
 
   StreamSubscription<DatabaseEvent>? _liveSubscription;
   StreamSubscription<DatabaseEvent>? _alertsSubscription;
+  StreamSubscription<Map<String, dynamic>>? _mqttSubscription;
+
+  final MqttService _mqttService = MqttService();
 
   double _driverScore = 0.0;
   double _rawGas = 0.0;
@@ -82,6 +86,9 @@ class DriverScoreProvider with ChangeNotifier {
     final hasDatabase = await _ensureDatabase();
     if (!hasDatabase) return;
 
+    // MQTT is a parallel real-time layer; Firebase logic remains unchanged.
+    await _startMqtt();
+
     _liveRef ??= _databaseRef!.child('carEmissions/liveData');
     _alertsRef ??= _databaseRef!.child('carEmissions/alerts');
 
@@ -101,6 +108,31 @@ class DriverScoreProvider with ChangeNotifier {
         _setMockData('Firebase error: $error. Showing demo data.');
       },
     );
+  }
+
+  Future<void> _startMqtt() async {
+    try {
+      await _mqttService.connectAndSubscribe(
+        clientId: 'ecodrive_flutter_${DateTime.now().millisecondsSinceEpoch}',
+        topic: 'ecodrive/pollution',
+      );
+
+      await _mqttSubscription?.cancel();
+      _mqttSubscription = _mqttService.messages.listen(
+        (data) {
+          _applyRealtimeData(data);
+        },
+        onError: (e) {
+          // Keep Firebase behavior untouched; just surface MQTT issues as info.
+          _error = 'MQTT error: $e';
+          notifyListeners();
+        },
+      );
+    } catch (e) {
+      // If MQTT is unavailable, app continues using Firebase as before.
+      _error = 'MQTT connection failed: $e';
+      notifyListeners();
+    }
   }
 
   Future<void> fetchHistory() async {
@@ -364,11 +396,15 @@ class DriverScoreProvider with ChangeNotifier {
     _liveSubscription = null;
     _alertsSubscription?.cancel();
     _alertsSubscription = null;
+    _mqttSubscription?.cancel();
+    _mqttSubscription = null;
+    _mqttService.disconnect();
   }
 
   @override
   void dispose() {
     stopListening();
+    _mqttService.dispose();
     super.dispose();
   }
 }
