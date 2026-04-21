@@ -336,10 +336,10 @@ class _InsightsScreenState extends State<InsightsScreen> {
               color: Colors.white.withOpacity(0.2),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
                   isDue
                       ? 'Check Due Now!'
                       : 'Due in $daysUntil ${daysUntil == 1 ? 'day' : 'days'}',
@@ -349,7 +349,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
                     color: textColor,
                   ),
                 ),
-              ],
+              ),
             ),
           ),
           if (_nextPollutionCheck != null) ...[

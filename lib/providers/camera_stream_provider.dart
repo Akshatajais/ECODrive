@@ -15,10 +15,12 @@ class CameraStreamProvider with ChangeNotifier {
   bool _isLoading = true;
   String? _error;
   String? _streamUrl;
+  String _lastSource = 'none';
 
   bool get isLoading => _isLoading;
   String? get error => _error;
   String? get streamUrl => _streamUrl;
+  String get lastSource => _lastSource;
 
   bool get isCameraConnected => (_streamUrl ?? '').trim().isNotEmpty;
 
@@ -44,6 +46,10 @@ class CameraStreamProvider with ChangeNotifier {
         (event) {
           final value = event.snapshot.value;
           _streamUrl = _extractStreamUrl(value);
+          _lastSource = 'FIREBASE';
+          debugPrint(
+            '[CAMERA][FIREBASE] Firebase update received streamUrl=${_streamUrl ?? 'null'} raw=$value',
+          );
           _isLoading = false;
           _error = null;
           notifyListeners();

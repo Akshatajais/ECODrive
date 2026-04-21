@@ -17,6 +17,7 @@ class MqttService {
 
   MqttServerClient? _client;
   String? _topic;
+  StreamSubscription<List<MqttReceivedMessage<MqttMessage>>>? _updatesSub;
 
   final _messagesController =
       StreamController<Map<String, dynamic>>.broadcast();
@@ -35,6 +36,7 @@ class MqttService {
     final client = MqttServerClient.withPort(host, clientId, port);
     _client = client;
 
+    client.setProtocolV311();
     client.logging(on: false);
     client.keepAlivePeriod = keepAliveSeconds;
     client.autoReconnect = true;
@@ -51,6 +53,8 @@ class MqttService {
         .withWillQos(MqttQos.atLeastOnce);
 
     try {
+      await _updatesSub?.cancel();
+      _updatesSub = null;
       await client.connect();
     } catch (e) {
       client.disconnect();
@@ -69,8 +73,11 @@ class MqttService {
   }
 
   void disconnect() {
+    _updatesSub?.cancel();
+    _updatesSub = null;
     _client?.disconnect();
     _client = null;
+    _topic = null;
   }
 
   void dispose() {
@@ -90,7 +97,7 @@ class MqttService {
     final client = _client;
     if (client == null) return;
 
-    client.updates?.listen(
+    _updatesSub = client.updates?.listen(
       (events) {
         if (events.isEmpty) return;
         final message = events.first.payload as MqttPublishMessage;
@@ -103,9 +110,13 @@ class MqttService {
             _messagesController.add(decoded);
           } else if (decoded is Map) {
             _messagesController.add(Map<String, dynamic>.from(decoded));
+          } else {
+            _messagesController.add({'value': decoded});
           }
-        } catch (_) {
-          // Ignore non-JSON payloads; caller can decide how strict to be.
+        } catch (e) {
+          // Keep the stream useful even for non-JSON payloads.
+          _messagesController.add({'raw': payload});
+          _messagesController.addError(e);
         }
       },
       onError: (e) {
@@ -119,7 +130,9 @@ class MqttService {
     _subscribeIfNeeded();
   }
 
-  void _onDisconnected() {}
+  void _onDisconnected() {
+    _messagesController.addError(StateError('MQTT disconnected'));
+  }
 
   void _onSubscribed(String topic) {}
 

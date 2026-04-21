@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -36,6 +37,9 @@ class DriverScoreProvider with ChangeNotifier {
   String? _error;
   String _licensePlate = _fallbackPlate;
 
+  String _lastRealtimeSource = 'none';
+  DateTime? _lastRealtimeArrival;
+
   final List<HistoryPoint> _history = [];
   bool _historyFromFirebase = false;
   final List<EmissionAlert> _alerts = [];
@@ -49,6 +53,8 @@ class DriverScoreProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
   String get licensePlate => _licensePlate;
+  String get lastRealtimeSource => _lastRealtimeSource;
+  DateTime? get lastRealtimeArrival => _lastRealtimeArrival;
 
   List<HistoryPoint> get history => List.unmodifiable(_history);
   List<EmissionAlert> get alertLogs => List.unmodifiable(_alerts);
@@ -102,7 +108,12 @@ class DriverScoreProvider with ChangeNotifier {
           _setMockData('No live data found. Showing demo data.');
           return;
         }
-        _applyRealtimeData(data);
+        _debugLogSource(
+          source: 'FIREBASE',
+          event: 'Firebase update received',
+          payload: data,
+        );
+        _applyRealtimeData(data, source: 'FIREBASE');
       },
       onError: (error) {
         _setMockData('Firebase error: $error. Showing demo data.');
@@ -120,7 +131,12 @@ class DriverScoreProvider with ChangeNotifier {
       await _mqttSubscription?.cancel();
       _mqttSubscription = _mqttService.messages.listen(
         (data) {
-          _applyRealtimeData(data);
+          _debugLogSource(
+            source: 'MQTT',
+            event: 'MQTT update received',
+            payload: data,
+          );
+          _applyRealtimeData(data, source: 'MQTT');
         },
         onError: (e) {
           // Keep Firebase behavior untouched; just surface MQTT issues as info.
@@ -217,7 +233,7 @@ class DriverScoreProvider with ChangeNotifier {
     });
   }
 
-  void _applyRealtimeData(dynamic data) {
+  void _applyRealtimeData(dynamic data, {required String source}) {
     double? parsedScore;
     double? parsedTemp;
     double? parsedHumidity;
@@ -243,6 +259,9 @@ class DriverScoreProvider with ChangeNotifier {
       _setMockData('Invalid live data. Showing demo data.');
       return;
     }
+
+    _lastRealtimeSource = source;
+    _lastRealtimeArrival = DateTime.now();
 
     if (parsedScore != null) {
       _driverScore = parsedScore.clamp(0.0, 500.0);
@@ -273,7 +292,28 @@ class DriverScoreProvider with ChangeNotifier {
 
     _isLoading = false;
     _error = null;
+    debugPrint(
+      '[REALTIME][$source] State updated lastSource=$_lastRealtimeSource at=${_lastRealtimeArrival?.toIso8601String()} score=$_driverScore rawGas=$_rawGas temp=$_temperature hum=$_humidity ts=${_timestamp?.toIso8601String()}',
+    );
     notifyListeners();
+  }
+
+  void _debugLogSource({
+    required String source,
+    required String event,
+    required Object? payload,
+  }) {
+    final now = DateTime.now().toIso8601String();
+    debugPrint('[$now][$source] $event');
+    try {
+      if (payload is Map) {
+        debugPrint('[$now][$source] payload=${jsonEncode(payload)}');
+      } else {
+        debugPrint('[$now][$source] payload=$payload');
+      }
+    } catch (e) {
+      debugPrint('[$now][$source] payload=<unprintable> err=$e');
+    }
   }
 
   void _appendLocalHistory(HistoryPoint point) {

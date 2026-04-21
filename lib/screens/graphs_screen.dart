@@ -62,15 +62,17 @@ class _GraphsScreenState extends State<GraphsScreen> {
   }
 
   Widget _buildTimeFilter() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        _buildChip('Last 1 hr', TimeFilter.hour),
-        const SizedBox(width: 8),
-        _buildChip('Last 24 hrs', TimeFilter.day),
-        const SizedBox(width: 8),
-        _buildChip('Last 7 days', TimeFilter.week),
-      ],
+    return Center(
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          _buildChip('Last 1 hr', TimeFilter.hour),
+          _buildChip('Last 24 hrs', TimeFilter.day),
+          _buildChip('Last 7 days', TimeFilter.week),
+        ],
+      ),
     );
   }
 

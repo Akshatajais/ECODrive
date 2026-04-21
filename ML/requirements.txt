@@ -1,0 +1,16 @@
+firebase-admin>=6.5.0
+python-dotenv>=1.0.1
+pandas>=2.2.2
+numpy>=2.0.0
+scikit-learn>=1.5.1
+scipy>=1.13.1
+joblib>=1.4.2
+matplotlib>=3.9.0
+seaborn>=0.13.2
+tqdm>=4.66.4
+
+# Optional (used if installed)
+xgboost>=2.1.0
+
+# For neural network + TFLite export
+tensorflow>=2.16.1
