@@ -21,6 +21,7 @@ dependencies:
   provider: ^6.1.1
   flutter_local_notifications: ^17.2.2
   http: ^1.2.2
+  tflite_flutter: ^0.11.0
 
 dev_dependencies:
   flutter_test:
@@ -33,6 +34,12 @@ flutter:
 
   assets:
     - lib/assets/logo.png
+    - ML/models/driver_model.tflite
+    - ML/models/vehicle_model.tflite
+    - ML/models/driver_classes.txt
+    - ML/models/vehicle_classes.txt
+    - ML/models/driver_preprocess.json
+    - ML/models/vehicle_preprocess.json
 
 flutter_icons:
   android: true

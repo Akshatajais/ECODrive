@@ -6,7 +6,7 @@ import 'screens/dashboard_screen.dart';
 import 'screens/alerts_screen.dart';
 import 'screens/graphs_screen.dart';
 import 'screens/settings_screen.dart';
-import 'screens/insights_screen.dart';
+import 'screens/ml_insights_screen.dart';
 import 'screens/camera_feed_screen.dart';
 import 'providers/driver_score_provider.dart';
 import 'providers/camera_stream_provider.dart';
@@ -99,7 +99,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     const CameraFeedScreen(),
     const AlertsScreen(),
     const GraphsScreen(),
-    InsightsScreen(),
+    const MlInsightsScreen(),
     const SettingsScreen(),
   ];
 

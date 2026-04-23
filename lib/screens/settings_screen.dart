@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/driver_score_provider.dart';
 import '../services/settings_service.dart';
+import '../widgets/pollution_insights_section.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -225,6 +226,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   description: 'Air Quality Index that triggers an alert',
                   onChanged: _saveAQIThreshold,
                 ),
+                const SizedBox(height: 32),
+
+                // Insights Section (moved from Insights page)
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.green[50],
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.menu_book,
+                        color: Colors.green[700],
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Insights & Reminders',
+                      style: GoogleFonts.poppins(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Pollution check schedule and air quality guidance',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const PollutionInsightsSection(),
                 const SizedBox(height: 32),
               ],
             ),
