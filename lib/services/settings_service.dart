@@ -12,6 +12,7 @@ class SettingsService {
   static const String _keyUpdateInterval = 'update_interval';
   static const String _keyLastPollutionCheck = 'last_pollution_check';
   static const String _keyNextPollutionCheck = 'next_pollution_check';
+  static const String _keyCameraStreamUrl = 'camera_stream_url';
 
   Future<String> getVehicleId() async {
     final prefs = await SharedPreferences.getInstance();
@@ -91,6 +92,24 @@ class SettingsService {
     final nextCheck = DateTime.now().add(const Duration(days: 40));
     await setNextPollutionCheck(nextCheck);
     await setLastPollutionCheck(DateTime.now());
+  }
+
+  Future<String?> getCameraStreamUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(_keyCameraStreamUrl);
+    if (value == null) return null;
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  Future<void> setCameraStreamUrl(String? url) async {
+    final prefs = await SharedPreferences.getInstance();
+    final trimmed = (url ?? '').trim();
+    if (trimmed.isEmpty) {
+      await prefs.remove(_keyCameraStreamUrl);
+      return;
+    }
+    await prefs.setString(_keyCameraStreamUrl, trimmed);
   }
 }
 

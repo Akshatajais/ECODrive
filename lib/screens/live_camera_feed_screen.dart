@@ -29,6 +29,7 @@ class LiveCameraFeedScreen extends StatefulWidget {
 class _LiveCameraFeedScreenState extends State<LiveCameraFeedScreen> {
   static const _initialReconnectDelay = Duration(seconds: 2);
   static const _maxReconnectDelay = Duration(seconds: 20);
+  static const _httpTimeout = Duration(seconds: 15);
 
   int _reloadToken = 0;
   bool _hadFrame = false;
@@ -87,7 +88,7 @@ class _LiveCameraFeedScreenState extends State<LiveCameraFeedScreen> {
     _streamController?.dispose();
     _streamController = _MjpegStreamController(
       url: widget.streamUrl!.trim(),
-      timeout: const Duration(seconds: 6),
+      timeout: _httpTimeout,
       onFirstFrame: () {
         if (!mounted) return;
         setState(() {
@@ -441,6 +442,7 @@ class _MjpegStreamController {
 
   StreamSubscription<List<int>>? _sub;
   http.StreamedResponse? _response;
+  Timer? _snapshotTimer;
 
   final ValueNotifier<ImageProvider?> image = ValueNotifier<ImageProvider?>(null);
 
@@ -456,7 +458,11 @@ class _MjpegStreamController {
     if (_disposed) return;
 
     try {
+      debugPrint('[CAMERA][HTTP] Connecting url=$_url');
       final request = http.Request('GET', Uri.parse(_url));
+      request.headers['User-Agent'] = 'Mozilla/5.0 (Linux; Android) AppleWebKit/537.36';
+      request.headers['Accept'] = '*/*';
+      request.headers['Connection'] = 'keep-alive';
       final response = await _client.send(request).timeout(_timeout);
       _response = response;
 
@@ -464,6 +470,26 @@ class _MjpegStreamController {
         throw StateError('Stream HTTP ${response.statusCode}');
       }
 
+      final contentType = (response.headers['content-type'] ?? '').toLowerCase();
+      final isMultipart = contentType.contains('multipart/');
+      if (!isMultipart) {
+        debugPrint(
+          '[CAMERA][HTTP] Non-multipart content-type="$contentType". Falling back to snapshot polling url=$_url',
+        );
+        // Many IP cameras expose a snapshot endpoint or a single JPEG at `/`.
+        // If we can't confirm an MJPEG stream, fall back to polling snapshots.
+        try {
+          final bytes = await response.stream.toBytes().timeout(_timeout);
+          _emitImageBytes(bytes);
+        } catch (_) {
+          // Ignore; polling below will retry.
+        }
+        await _stopStreamOnly();
+        _startSnapshotPolling();
+        return;
+      }
+
+      debugPrint('[CAMERA][HTTP] Detected MJPEG multipart stream url=$_url');
       final carry = <int>[];
       _sub = response.stream.listen(
         (chunk) {
@@ -472,17 +498,20 @@ class _MjpegStreamController {
         },
         onError: (e) {
           if (_disposed) return;
-          _onError(e);
+          debugPrint('[CAMERA][HTTP] Stream error url=$_url err=$e');
+          _onError(StateError('Stream error ($_url): $e'));
         },
         onDone: () {
           if (_disposed) return;
-          _onError(StateError('Stream closed'));
+          debugPrint('[CAMERA][HTTP] Stream closed url=$_url');
+          _onError(StateError('Stream closed ($_url)'));
         },
         cancelOnError: true,
       );
     } catch (e) {
       if (_disposed) return;
-      _onError(e);
+      debugPrint('[CAMERA][HTTP] Connect failed url=$_url err=$e');
+      _onError(StateError('Camera connect failed ($_url): $e'));
     }
   }
 
@@ -527,7 +556,62 @@ class _MjpegStreamController {
     }
   }
 
+  void _emitImageBytes(List<int> bytes) {
+    if (bytes.isEmpty) return;
+    final data = Uint8List.fromList(bytes);
+    image.value = MemoryImage(data);
+    _onFrame();
+    if (!_sentFirstFrame) {
+      _sentFirstFrame = true;
+      _onFirstFrame();
+    }
+  }
+
+  void _startSnapshotPolling() {
+    _snapshotTimer?.cancel();
+    _snapshotTimer = Timer.periodic(const Duration(milliseconds: 250), (_) async {
+      if (_disposed) return;
+      await _fetchSnapshot();
+    });
+  }
+
+  Future<void> _fetchSnapshot() async {
+    try {
+      final uri = Uri.parse(_url);
+      final res = await _client
+          .get(uri, headers: {
+            // Avoid cached snapshots (some cameras cache aggressively).
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+            'User-Agent': 'Mozilla/5.0 (Linux; Android) AppleWebKit/537.36',
+            'Accept': 'image/*,*/*',
+          })
+          .timeout(_timeout);
+
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        throw StateError('Snapshot HTTP ${res.statusCode}');
+      }
+      if (res.bodyBytes.isEmpty) return;
+      _emitImageBytes(res.bodyBytes);
+    } catch (e) {
+      if (_disposed) return;
+      debugPrint('[CAMERA][HTTP] Snapshot error url=$_url err=$e');
+      _onError(StateError('Snapshot error ($_url): $e'));
+    }
+  }
+
   Future<void> _stop() async {
+    _snapshotTimer?.cancel();
+    _snapshotTimer = null;
+    await _sub?.cancel();
+    _sub = null;
+    try {
+      _response?.stream.drain();
+    } catch (_) {}
+    _response = null;
+  }
+
+  Future<void> _stopStreamOnly() async {
     await _sub?.cancel();
     _sub = null;
     try {

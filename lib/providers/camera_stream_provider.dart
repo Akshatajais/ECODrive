@@ -7,6 +7,7 @@ import 'package:firebase_database/firebase_database.dart';
 class CameraStreamProvider with ChangeNotifier {
   static const String _databaseUrl =
       'https://ecodrive-85155-default-rtdb.firebaseio.com';
+  static const String _fallbackStreamUrl = 'http://192.168.54.213';
 
   DatabaseReference? _databaseRef;
   DatabaseReference? _cameraRef;
@@ -45,8 +46,8 @@ class CameraStreamProvider with ChangeNotifier {
       _cameraSubscription = _cameraRef!.onValue.listen(
         (event) {
           final value = event.snapshot.value;
-          _streamUrl = _extractStreamUrl(value);
-          _lastSource = 'FIREBASE';
+          _streamUrl = _extractStreamUrl(value) ?? _fallbackStreamUrl;
+          _lastSource = _extractStreamUrl(value) == null ? 'FALLBACK' : 'FIREBASE';
           debugPrint(
             '[CAMERA][FIREBASE] Firebase update received streamUrl=${_streamUrl ?? 'null'} raw=$value',
           );
@@ -57,14 +58,16 @@ class CameraStreamProvider with ChangeNotifier {
         onError: (e) {
           _isLoading = false;
           _error = 'Backend error: $e';
-          _streamUrl = null;
+          _streamUrl = _fallbackStreamUrl;
+          _lastSource = 'FALLBACK';
           notifyListeners();
         },
       );
     } catch (e) {
       _isLoading = false;
       _error = 'Backend unavailable';
-      _streamUrl = null;
+      _streamUrl = _fallbackStreamUrl;
+      _lastSource = 'FALLBACK';
       notifyListeners();
     }
   }
