@@ -6,6 +6,7 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <time.h>
+#include <PubSubClient.h>   // MQTT ADDED
 
 // ===== LCD =====
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -22,6 +23,14 @@ DHT dht(DHTPIN, DHTTYPE);
 #define WIFI_SSID "Galaxy"
 #define WIFI_PASSWORD "ecodrive"
 
+// ===== MQTT FIRST BLOCK ADDED =====
+const char* mqtt_server = "broker.hivemq.com";
+const int mqtt_port = 1883;
+const char* mqtt_topic = "ecodrive/pollution";
+
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
+
 // ===== FIREBASE =====
 #define API_KEY "AIzaSyBjlXZlC8fQiNmSLMzmQF-m5PjUxkxLWlc"
 #define DATABASE_URL "https://ecodrive-85155-default-rtdb.firebaseio.com/"
@@ -36,8 +45,19 @@ unsigned long lastUpdate = 0;
 int interval = 5000;
 
 // ===== MQ7 CALIBRATION =====
-int cleanAir = 200;   // adjust after testing
-int maxSmoke = 700;   // adjust so incense → ~500
+int cleanAir = 200;
+int maxSmoke = 700;
+
+// ===== MQTT CONNECT FUNCTION =====
+void reconnectMQTT() {
+  while (!mqttClient.connected()) {
+    if (mqttClient.connect("EcoDriveESP32")) {
+      Serial.println("MQTT Connected");
+    } else {
+      delay(2000);
+    }
+  }
+}
 
 // ================= TIME =================
 String getIST() {
@@ -91,6 +111,7 @@ int calculateEmissionScore(int rawGas) {
 // ================= SETUP =================
 void setup() {
   Serial.begin(115200);
+
   byte heart[8] = {
   0b00000,
   0b01010,
@@ -102,25 +123,23 @@ void setup() {
   0b00000
 };
 
-  lcd.createChar(0, heart);  // store at index 0
+  lcd.createChar(0, heart);
 
-  // LCD init
   Wire.begin(21, 22);
   lcd.init();
   lcd.backlight();
-// Line 1 (centered)
+
   lcd.clear();
 
-// Line 1
   lcd.setCursor(2, 0);
-  lcd.write(byte(0));  // heart
+  lcd.write(byte(0));
   lcd.print(" Eco Drive");
   delay(2000);
-  // Line 2
+
   lcd.setCursor(2, 1);
   lcd.print("Starting...");
   delay(3000);
-  // WiFi
+
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED) {
     delay(300);
@@ -138,11 +157,18 @@ void setup() {
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
 
+  mqttClient.setServer(mqtt_server, mqtt_port);   // MQTT ADDED
+
   lcd.clear();
 }
 
 // ================= LOOP =================
 void loop() {
+
+  if (!mqttClient.connected()) {
+    reconnectMQTT();
+  }
+  mqttClient.loop();
 
   if (Firebase.ready() && millis() - lastUpdate > interval) {
     lastUpdate = millis();
@@ -159,7 +185,6 @@ void loop() {
     String dateFolder = getDateOnly();
     String timeKey = getTimeOnly();
 
-    // ===== LCD DISPLAY =====
     lcd.clear();
 
     lcd.setCursor(0, 0);
@@ -172,7 +197,6 @@ void loop() {
     lcd.print("Gas:");
     lcd.print(rawGas);
 
-    // ===== FIREBASE =====
     FirebaseJson json;
     json.set("rawGas", rawGas);
     json.set("temperature", temperature);
@@ -194,6 +218,16 @@ void loop() {
       String alertId = dateFolder + "_" + timeKey;
       Firebase.RTDB.setJSON(&fbdo, ("/carEmissions/alerts/" + alertId).c_str(), &alertJson);
     }
+
+    // MQTT SEND
+    String payload = "{";
+    payload += "\"rawGas\":" + String(rawGas) + ",";
+    payload += "\"temperature\":" + String(temperature) + ",";
+    payload += "\"humidity\":" + String(humidity) + ",";
+    payload += "\"emissionScore\":" + String(emissionScore);
+    payload += "}";
+
+    mqttClient.publish(mqtt_topic, payload.c_str());
 
     Serial.print("Gas: "); Serial.print(rawGas);
     Serial.print(" Score: "); Serial.println(emissionScore);

@@ -44,6 +44,11 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.debug
+
+            // Avoid R8 stripping TFLite GPU classes during release builds.
+            // (This project currently relies on classes that can be removed by minification.)
+            minifyEnabled false
+            shrinkResources false
         }
     }
 }
