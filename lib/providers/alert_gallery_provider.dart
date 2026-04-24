@@ -12,13 +12,16 @@ class AlertSnapshot {
     required this.id,
     required this.timestampRaw,
     required this.emissionScore,
-    required this.imageBase64,
+    required this.imagePayload,
   });
 
   final String id;
   final String timestampRaw;
   final int emissionScore;
-  final String imageBase64;
+  /// Base64 JPEG payload; may be raw base64 or prefixed strings like:
+  /// - "data:image/jpeg;base64,<...>"
+  /// - "blob,base64,<...>"
+  final String imagePayload;
 
   DateTime? get timestamp {
     // Accept both "YYYY-MM-DD HH:MM:SS" and ISO8601.
@@ -29,13 +32,34 @@ class AlertSnapshot {
   }
 
   Uint8List? get imageBytes {
-    final raw = imageBase64.trim();
+    final raw = _stripBase64Prefix(imagePayload).trim();
     if (raw.isEmpty) return null;
     try {
       return base64Decode(raw);
     } catch (_) {
       return null;
     }
+  }
+
+  static String _stripBase64Prefix(String input) {
+    final s = input.trim();
+    if (s.isEmpty) return s;
+
+    // Common data-url prefix.
+    final dataIdx = s.indexOf('base64,');
+    if (dataIdx != -1) {
+      return s.substring(dataIdx + 'base64,'.length);
+    }
+
+    // Some emit "blob,base64,<...>".
+    if (s.startsWith('blob,') && s.contains(',')) {
+      final lastComma = s.lastIndexOf(',');
+      if (lastComma != -1 && lastComma + 1 < s.length) {
+        return s.substring(lastComma + 1);
+      }
+    }
+
+    return s;
   }
 }
 
@@ -113,7 +137,7 @@ class AlertGalleryProvider with ChangeNotifier {
           : int.tryParse(emission?.toString() ?? '') ?? 0;
 
       // We only show snapshots that include an image payload.
-      final img = (v['imageBase64'] ?? '').toString();
+      final img = (v['imageBase64'] ?? v['image'] ?? v['img'] ?? '').toString();
       if (img.trim().isEmpty) return;
 
       out.add(
@@ -121,7 +145,7 @@ class AlertGalleryProvider with ChangeNotifier {
           id: key,
           timestampRaw: ts,
           emissionScore: score,
-          imageBase64: img,
+          imagePayload: img,
         ),
       );
     });
