@@ -1,9 +1,35 @@
 #include "esp_camera.h"
 #include <WiFi.h>
+#include <Firebase_ESP_Client.h>
+#include "addons/TokenHelper.h"
+#include "addons/RTDBHelper.h"
+#include "base64.h"
+#include <time.h>
+#include <memory>
 
 // 🔑 Replace with your WiFi credentials
 const char* ssid = "Galaxy";
 const char* password = "ecodrive";
+
+// ===== FIREBASE (same project as main.cpp) =====
+#define API_KEY "AIzaSyBjlXZlC8fQiNmSLMzmQF-m5PjUxkxLWlc"
+#define DATABASE_URL "https://ecodrive-85155-default-rtdb.firebaseio.com/"
+#define USER_EMAIL "ecodrive@test.com"
+#define USER_PASSWORD "test1234"
+
+static FirebaseData fbdo;
+static FirebaseAuth auth;
+static FirebaseConfig firebaseConfig;
+
+static const char* kEmissionScorePath = "/carEmissions/liveData/emissionScore";
+static const char* kCaptureRootPath = "/carEmissions/alerts";
+
+static const int kThreshold = 400;
+static const unsigned long kPollIntervalMs = 2500;
+static const unsigned long kCaptureCooldownMs = 30000;
+
+static unsigned long lastPollMs = 0;
+static unsigned long lastCaptureMs = 0;
 
 // 📌 Select camera model
 #define CAMERA_MODEL_AI_THINKER
@@ -33,6 +59,59 @@ const char* password = "ecodrive";
 
 // HTTP server handles
 httpd_handle_t stream_httpd = NULL;
+
+static String getIST() {
+  time_t now = time(nullptr);
+  struct tm timeinfo;
+  localtime_r(&now, &timeinfo);
+
+  char buffer[32];
+  sprintf(buffer, "%04d-%02d-%02d %02d:%02d:%02d",
+          timeinfo.tm_year + 1900,
+          timeinfo.tm_mon + 1,
+          timeinfo.tm_mday,
+          timeinfo.tm_hour,
+          timeinfo.tm_min,
+          timeinfo.tm_sec);
+  return String(buffer);
+}
+
+static String base64EncodeToString(const uint8_t* data, size_t len) {
+  const size_t outLen = 4 * ((len + 2) / 3) + 1;
+  std::unique_ptr<char[]> out(new char[outLen]);
+  out[0] = '\0';
+  base64_encode(out.get(), reinterpret_cast<const char*>(data), len);
+  return String(out.get());
+}
+
+static bool readEmissionScore(int& outScore) {
+  if (!Firebase.ready()) return false;
+  if (!Firebase.RTDB.getInt(&fbdo, kEmissionScorePath)) return false;
+  if (fbdo.dataType() != "int") return false;
+  outScore = fbdo.intData();
+  return true;
+}
+
+static bool uploadCaptureToFirebase(camera_fb_t* fb, int emissionScore) {
+  if (!fb || fb->len == 0) return false;
+
+  const String ts = getIST();
+  String alertId = ts;
+  alertId.replace(" ", "_");
+  alertId.replace(":", "-");
+
+  const String path = String(kCaptureRootPath) + "/" + alertId;
+
+  FirebaseJson payload;
+  payload.set("timestamp", ts);
+  payload.set("emissionScore", emissionScore);
+  payload.set("message", "High emission snapshot (ESP32-CAM)");
+  payload.set("imageFormat", "jpg");
+  payload.set("imageBytes", (int)fb->len);
+  payload.set("imageBase64", base64EncodeToString(fb->buf, fb->len));
+
+  return Firebase.RTDB.setJSON(&fbdo, path.c_str(), &payload);
+}
 
 // Stream handler
 static esp_err_t stream_handler(httpd_req_t *req){
@@ -97,20 +176,21 @@ void setup() {
   config.pin_pclk = PCLK_GPIO_NUM;
   config.pin_vsync = VSYNC_GPIO_NUM;
   config.pin_href = HREF_GPIO_NUM;
-  config.pin_sscb_sda = SIOD_GPIO_NUM;
-  config.pin_sscb_scl = SIOC_GPIO_NUM;
+  config.pin_sccb_sda = SIOD_GPIO_NUM;
+  config.pin_sccb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
 
   if(psramFound()){
-    config.frame_size = FRAMESIZE_VGA;
-    config.jpeg_quality = 10;
+    // Keep frames smaller to make base64 upload feasible
+    config.frame_size = FRAMESIZE_QVGA;
+    config.jpeg_quality = 12;
     config.fb_count = 2;
   } else {
-    config.frame_size = FRAMESIZE_CIF;
-    config.jpeg_quality = 12;
+    config.frame_size = FRAMESIZE_QQVGA;
+    config.jpeg_quality = 14;
     config.fb_count = 1;
   }
 
@@ -132,6 +212,17 @@ void setup() {
 
   Serial.println("\nWiFi connected!");
 
+  // Time (IST) for readable alert IDs/timestamps
+  configTime(19800, 0, "pool.ntp.org", "time.nist.gov");
+
+  // Firebase init
+  firebaseConfig.api_key = API_KEY;
+  firebaseConfig.database_url = DATABASE_URL;
+  auth.user.email = USER_EMAIL;
+  auth.user.password = USER_PASSWORD;
+  Firebase.begin(&firebaseConfig, &auth);
+  Firebase.reconnectWiFi(true);
+
   startCameraServer();
 
   Serial.print("📸 Open camera: http://");
@@ -139,5 +230,42 @@ void setup() {
 }
 
 void loop() {
-  delay(1);
+  // Poll Firebase for current emission score
+  const unsigned long now = millis();
+  if (now - lastPollMs >= kPollIntervalMs) {
+    lastPollMs = now;
+
+    int score = -1;
+    if (readEmissionScore(score)) {
+      Serial.print("Firebase emissionScore: ");
+      Serial.println(score);
+
+      const bool over = score > kThreshold;
+      const bool cooldownOk = (now - lastCaptureMs) >= kCaptureCooldownMs;
+
+      if (over && cooldownOk) {
+        Serial.println("Threshold exceeded; capturing & uploading snapshot...");
+        camera_fb_t* fb = esp_camera_fb_get();
+        if (!fb) {
+          Serial.println("Camera capture failed");
+        } else {
+          const bool ok = uploadCaptureToFirebase(fb, score);
+          esp_camera_fb_return(fb);
+
+          if (ok) {
+            lastCaptureMs = now;
+            Serial.println("Snapshot uploaded to Firebase alerts.");
+          } else {
+            Serial.print("Upload failed: ");
+            Serial.println(fbdo.errorReason());
+          }
+        }
+      }
+    } else if (Firebase.ready()) {
+      Serial.print("Failed to read emissionScore: ");
+      Serial.println(fbdo.errorReason());
+    }
+  }
+
+  delay(10);
 }

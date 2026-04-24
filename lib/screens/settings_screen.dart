@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/driver_score_provider.dart';
-import '../providers/camera_stream_provider.dart';
 import '../services/settings_service.dart';
 import '../widgets/pollution_insights_section.dart';
 
@@ -15,7 +14,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final SettingsService _settingsService = SettingsService();
-  final TextEditingController _cameraUrlController = TextEditingController();
   
   double _coThreshold = 500.0;
   double _aqiThreshold = 100.0;
@@ -29,19 +27,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadSettings() async {
     final coThreshold = await _settingsService.getCOThreshold();
     final aqiThreshold = await _settingsService.getAQIThreshold();
-    final cameraUrl = await _settingsService.getCameraStreamUrl();
     
     setState(() {
       _coThreshold = coThreshold;
       _aqiThreshold = aqiThreshold;
     });
-
-    _cameraUrlController.text = cameraUrl ?? '';
   }
 
   @override
   void dispose() {
-    _cameraUrlController.dispose();
     super.dispose();
   }
 
@@ -174,102 +168,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 const SizedBox(height: 32),
-
-                // Camera Stream Section
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue[50],
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.videocam,
-                        color: Colors.blue[700],
-                        size: 24,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Camera Stream',
-                      style: GoogleFonts.poppins(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Paste the exact URL that works in your phone browser (including port/path).',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.1),
-                        spreadRadius: 2,
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TextField(
-                        controller: _cameraUrlController,
-                        keyboardType: TextInputType.url,
-                        textInputAction: TextInputAction.done,
-                        decoration: InputDecoration(
-                          labelText: 'Camera URL',
-                          hintText: 'e.g. http://192.168.54.213/ or http://192.168.54.213:81/stream',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: () async {
-                                final url = _cameraUrlController.text.trim();
-                                await context.read<CameraStreamProvider>().setManualUrl(url);
-                                _showSnackBar('Camera URL saved');
-                              },
-                              icon: const Icon(Icons.save),
-                              label: const Text('Save'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () async {
-                                _cameraUrlController.text = '';
-                                await context.read<CameraStreamProvider>().setManualUrl(null);
-                                _showSnackBar('Camera URL cleared');
-                              },
-                              icon: const Icon(Icons.clear),
-                              label: const Text('Clear'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
                 
                 // Alert Thresholds Section
                 Row(

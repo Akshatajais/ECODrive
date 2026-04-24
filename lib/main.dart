@@ -9,8 +9,7 @@ import 'screens/settings_screen.dart';
 import 'screens/ml_insights_screen.dart';
 import 'screens/camera_feed_screen.dart';
 import 'providers/driver_score_provider.dart';
-import 'providers/camera_stream_provider.dart';
-import 'providers/evidence_capture_provider.dart';
+import 'providers/alert_gallery_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,17 +35,7 @@ class SmartVehicleEmissionMonitorApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => DriverScoreProvider()),
-        ChangeNotifierProvider(create: (_) => CameraStreamProvider()),
-        Provider(
-          create: (_) => EvidenceCaptureProvider(),
-        ),
-        ProxyProvider3<DriverScoreProvider, CameraStreamProvider,
-            EvidenceCaptureProvider, EvidenceCaptureProvider>(
-          update: (context, driver, camera, evidence, prev) {
-            evidence.maybeCapture(driver: driver, camera: camera);
-            return evidence;
-          },
-        ),
+        ChangeNotifierProvider(create: (_) => AlertGalleryProvider()),
       ],
       child: MaterialApp(
         title: 'EcoDrive',
@@ -141,8 +130,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               label: 'Dashboard',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.videocam),
-              label: 'Camera',
+              icon: Icon(Icons.photo_library),
+              label: 'Snapshots',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.notifications),
