@@ -173,6 +173,10 @@ The model’s “principle of operation” is:
 
 This captures patterns that correspond to driver style and health conditions better than raw single-point thresholds.
 
+### 4.4 Runtime window size (current implementation)
+
+In the current Flutter inference implementation (`lib/services/ml_insights_service.dart`), EcoDrive builds the session window from the **latest 80 readings** (or fewer if history is shorter). The offline ML pipeline still supports \(N \in [50, 100]\); the important constraint is that the **feature definitions and column ordering** match between training and mobile inference.
+
 ---
 
 ## 5) Labels (pseudo-labeling strategy)
@@ -199,10 +203,7 @@ The pipeline trains multiple model families and compares them:
 
 The best-performing model per task is exported for mobile inference.
 
-In this repository, the exported artifacts indicate Keras models were selected:
-
-- `ML/models/driver_nn.keras`
-- `ML/models/vehicle_nn.keras`
+Exported artifacts in this project are the quantized **TensorFlow Lite** models consumed by the Flutter app.
 
 ---
 
@@ -259,6 +260,8 @@ Artifacts:
 - class names:
   - `ML/models/driver_classes.txt`
   - `ML/models/vehicle_classes.txt`
+
+**Note:** These files are declared as Flutter assets in `pubspec.yaml`. If they are missing in your working copy, regenerate them by running the ML pipeline export steps (`ML/scripts/06_export_tflite.py` and `ML/scripts/07_export_preprocess_json.py`) and ensure they exist at `ML/models/`.
 
 ---
 

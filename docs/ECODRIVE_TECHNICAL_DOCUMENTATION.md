@@ -61,7 +61,8 @@ Top-level structure (key folders):
   - `temperature` (float)
   - `humidity` (float)
   - `emissionScore` (int/float)
-  - `timestamp` (string)
+
+**Note:** In the current firmware (`iot_code/mainsensor.cpp`), the MQTT payload does **not** include a timestamp; timestamps are written into Firebase as part of `liveData` and `history`. If the app needs a receive-time timestamp for MQTT, it should add it client-side.
 
 **Implementation notes**
 
@@ -79,13 +80,14 @@ All project paths are under `carEmissions/`:
   Historical records keyed by date folder and time key (JSON object).
 
 - `carEmissions/alerts/<alertId>`  
-  Alert records; firmware writes when `emissionScore >= 400`.
+  Alert records; written when the emission score crosses the threshold. Two alert producers exist:
+  - **Sensor firmware (`iot_code/mainsensor.cpp`)**: writes a small JSON alert when `emissionScore >= 400`.
+  - **ESP32-CAM firmware (`iot_code/cam.cpp`)**: writes alert metadata and stores a JPEG snapshot as a blob under `carEmissions/alerts/<alertId>/image`.
 
-- `carEmissions/camera`  
-  Camera metadata (used by the Flutter camera feed screen/provider):
-  - `streamUrl` (string, e.g., `http://<ip>:82`)
-  - `captureUrl` (string, e.g., `http://<ip>:81/capture`)
-  - `timestamp` (string)
+- `carEmissions/camera` *(optional app configuration)*  
+  Camera stream configuration used by the Flutter app (`CameraStreamProvider`). This node may be set manually (or by a separate process) and supports:
+  - `streamUrl` (string, e.g., `http://<ip>/`)
+  - alternative keys accepted by the app: `url`, `stream`
 
 ---
 
@@ -99,7 +101,7 @@ All project paths are under `carEmissions/`:
 
 ### 4.2 Firmware logic
 
-Key behaviors in `iot_code/main.cpp`:
+Key behaviors in `iot_code/mainsensor.cpp`:
 
 - Connect to Wi-Fi using `WIFI_SSID` and `WIFI_PASSWORD`
 - Configure NTP time for timestamps
@@ -121,16 +123,19 @@ The firmware maps raw gas readings into a bounded score:
 
 ### 4.4 Optional ESP32-CAM support
 
-`main.cpp` includes a camera integration guarded by `ENABLE_CAMERA`:
+EcoDrive’s camera capability is implemented as a **separate firmware** for ESP32-CAM:
 
-- Starts a **JPEG capture endpoint** at `http://<ip>:81/capture`
-- Starts a **basic MJPEG stream** at `http://<ip>:82`
-- Writes camera URLs to Firebase at `carEmissions/camera`
+- **File**: `iot_code/cam.cpp`
+- **Stream endpoint**: `http://<ip>/` (MJPEG stream served by an embedded HTTP server)
+- **Trigger source**: polls Firebase `carEmissions/liveData/emissionScore`
+- **On threshold**: when the score exceeds the threshold (400) and the cooldown allows, it captures a JPEG and uploads:
+  - metadata JSON under `carEmissions/alerts/<alertId>`
+  - JPEG bytes as an RTDB blob under `carEmissions/alerts/<alertId>/image`
 
 **Procedure to enable**
 
-- Define `ENABLE_CAMERA` (compile flag or uncomment `#define ENABLE_CAMERA`)
-- Compile for an ESP32-CAM board (AI Thinker pinmap is included)
+- Build/flash `iot_code/cam.cpp` for an ESP32-CAM board (AI Thinker pinmap is included)
+- Ensure the sensor firmware is already publishing `emissionScore` into Firebase (`carEmissions/liveData/emissionScore`)
 
 **Constraint**
 
@@ -179,7 +184,10 @@ From `pubspec.yaml` (selected):
 `CameraStreamProvider`:
 
 - Listens to RTDB path `carEmissions/camera`
-- Extracts a URL from `streamUrl` (or similar keys) and exposes it to the UI.
+- Extracts a URL from `streamUrl` (also accepts `url` or `stream`) and exposes it to the UI
+- Falls back to a built-in local IP when Firebase has no stream URL (see `lib/providers/camera_stream_provider.dart`)
+
+**Implementation note:** The current ESP32-CAM firmware (`iot_code/cam.cpp`) serves the stream over HTTP but does **not** publish its IP/URL into `carEmissions/camera`. If you want fully automatic camera discovery in the app, add a small write from the camera firmware to that node (or update the app to discover it another way).
 
 ### 5.5 Alerts and reminders
 
